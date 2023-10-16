@@ -30,9 +30,6 @@ steps:
   inputs:
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'test'
 - task: CopyFiles@2
   inputs:
     SourceFolder: '$(agent.builddirectory)'
@@ -41,7 +38,7 @@ steps:
 - task: CopyFiles@2
   inputs:
     SourceFolder: '$(agent.builddirectory)'
-    Contents: '**/**.trx'
+    Contents: '**/*host.dll'
     TargetFolder: '$(build.artifactstagingdirectory)'
 - task: PublishBuildArtifacts@1
   inputs:
