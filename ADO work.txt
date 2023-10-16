@@ -1,0 +1,146 @@
+
+==========================================Read Result==========================================
+
+Write-Host "$(Agent.TempDirectory)"
+$path =-join("$(Agent.TempDirectory)", "\", "TestResults")
+Write-Host "Path -> $path"
+$file = Get-ChildItem -Path "$path"  -Recurse -Filter "*.trx"
+Write-Host "File -> $file"
+$absolutePath =-join("$path", "\", "$file")
+Write-Host "Full path-> $absolutePath "
+
+[xml]$xml = Get-Content -Path $absolutePath
+Write-Host "XML -> $xml"
+
+$nodes = $xml.SelectNodes("//*[@executionId][@outcome]")
+Write-Host "Nodes-> $nodes "
+
+$result=""
+foreach ($node in $nodes) {
+      $testName=$node.attributes['testName'].value
+       $outcome=$node.attributes['outcome'].value
+        $result=$testName+":"+$outcome+","+$result
+}
+Write-Host $result
+
+Write-Host "##vso[task.setvariable variable=result]$result"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+==========================================SendMail==========================================
+# Write your PowerShell commands here.
+Write-Host "RESULT -> $(result)"
+
+Write-Host "Bearer $env:SYSTEM_ACCESSTOKEN"
+  
+    ## Variables to send mail
+    $myorg = “debduttachatterjee09”
+    $myproj = “SendMail_Pipeline”
+    $sendmailto = “debduttachatterjee09@gmail.com” ## comma separated email ids of receivers
+    $mysubject = “my custom subject of the mail” ## Subject of the email
+    $mailbody = "$(result)" ## mail body
+
+    ## Get tfsids of users whom to send mail
+    $mailusers = “$sendmailto”
+    $mymailusers = $mailusers -split “,”
+    $pat = “Bearer $env:System_AccessToken”
+    $myurl =”https://dev.azure.com/${myorg}/_apis/projects/${myproj}/teams?api-version=5.1"
+    $data = Invoke-RestMethod -Uri $myurl -Headers @{
+      Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+    }
+    $myteams = $data.value.id
+    Write-Host $myteams
+
+    ##Get list of members in all teams
+    $myusersarray = @()
+    foreach($myteam in $myteams) {
+    $usrurl = “https://dev.azure.com/${myorg}/_apis/projects/${myproj}/teams/"+$myteam+"/members?api-version=5.1"
+    $userdata = Invoke-RestMethod -Uri $usrurl -Headers @{
+      Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+    }
+    Write-Host $userdata
+    $myusers = $userdata.value
+    foreach($myuser in $myusers) {
+    $myuserid = $myuser.identity.id
+    $myusermail = $myuser.identity.uniqueName
+    $myuserrecord = $myuserid+”:”+$myusermail
+    $myusersarray += $myuserrecord
+    }
+    }
+    Write-Host $myusersarray
+
+    ## filter unique users
+    $myfinalusersaray = $myusersarray | sort -Unique
+    Write-Host $myfinalusersaray
+    ## create final hash of emails and tfsids
+    $myusershash = @{}
+    for ($i = 0; $i -lt $myfinalusersaray.count; $i++)
+    {
+$user_id ="$myfinalusersaray[$i]".split(“:”)[0]
+Write-Host " Id: $user_id" 
+$user_email="$myfinalusersaray[$i]".split(“:”)[1].replace("[0]","")
+Write-Host "email: $user_email"
+    $myusershash[$user_email] = $myfinalusersaray[$user_id]
+    }
+
+Write-Host " Hash: $myusershash[$user_email] " 
+Write-Host " Mail To: $mymailusers" 
+    ##
+    ## create list of tfsid of mailers
+$myto=""
+    foreach($mymail in $mymailusers) {
+Write-Host "my email inside loop -> $mymail"
+    $myto = $myto +’”’+$myusershash[$mymail]+’”,’
+Write-Host "Myto inside loop -> $myto"
+    }
+    Write-Host $myto
+    
+    ##send mail
+    $uri = “https://${myorg}.vsrm.visualstudio.com/${myproj}/_apis/Release/sendmail/$(RELEASE.RELEASEID)?api-version=3.2-preview.1"
+    Write-Host "URI ->  $uri "
+    $requestBody =@”
+    {
+    “senderType”:1,
+    “to”:{“tfsIds”:["d0e99737-8679-69c9-8af7-10845bfc5e46"]},
+    “body”:”${mailbody}”,
+    “subject”:”${mysubject}”
+    }
+“@
+    Try {
+    $data =Invoke-RestMethod -Uri $uri -Body $requestBody -Method POST -Headers @{
+      Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+    } -ContentType “application/json”
+
+$response = $data | ConvertTo-Json -Depth 5
+    Write-Host $response
+    }
+    
+    Catch {
+    Write-Host "Exception $_.Exception"
+    }
+
+
